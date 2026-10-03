@@ -53,7 +53,7 @@ pipeline {
             steps {
                 dir('k8s-manifests') {
                     git credentialsId: 'github-creds',
-                        url: 'https://github.com/Shrishaks/todo-app-manifests.git',
+                        url: 'https://github.com/Shrishaks/todo-app-devops.git',
                         branch: 'main'
                 }
             }
@@ -94,7 +94,7 @@ pipeline {
                             git diff --cached --quiet || \
                             git commit -m "Update image to ${IMAGE_TAG}"
 
-                            git push https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/Shrishaks/todo-app-manifests.git HEAD:main
+                            git push https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/Shrishaks/todo-app-devops.git HEAD:main
                         '''
                     }
                 }
