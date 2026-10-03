@@ -11,6 +11,8 @@ pipeline {
 
         stage('Checkout Application') {
             steps {
+                echo "Checking out application code..."
+
                 git credentialsId: 'github-creds',
                     url: 'https://github.com/Shrishaks/todo-app-devops.git',
                     branch: 'main'
@@ -52,6 +54,8 @@ pipeline {
         stage('Checkout Kubernetes Manifests') {
             steps {
                 dir('k8s-manifests') {
+                    echo "Checking out Kubernetes manifests..."
+
                     git credentialsId: 'github-creds',
                         url: 'https://github.com/Shrishaks/todo-app-devops.git',
                         branch: 'main'
@@ -63,13 +67,23 @@ pipeline {
             steps {
                 dir('k8s-manifests') {
                     sh '''
-                        echo "Before update:"
-                        cat deploy.yaml
+                        echo "======================================"
+                        echo "Before image update:"
+                        echo "======================================"
 
-                        sed -i "s|image:.*|image: ${IMAGE_NAME}:${IMAGE_TAG}|g" deploy.yaml
+                        cat deploy/deploy.yaml
 
-                        echo "After update:"
-                        cat deploy.yaml
+                        echo ""
+                        echo "Updating Docker image..."
+
+                        sed -i "s|image:.*|image: ${IMAGE_NAME}:${IMAGE_TAG}|g" deploy/deploy.yaml
+
+                        echo ""
+                        echo "======================================"
+                        echo "After image update:"
+                        echo "======================================"
+
+                        cat deploy/deploy.yaml
                     '''
                 }
             }
@@ -89,12 +103,15 @@ pipeline {
                             git config user.name "Jenkins"
                             git config user.email "jenkins@localhost"
 
-                            git add deploy.yaml
+                            git add deploy/deploy.yaml
 
-                            git diff --cached --quiet || \
-                            git commit -m "Update image to ${IMAGE_TAG}"
+                            if git diff --cached --quiet; then
+                                echo "No changes to commit."
+                            else
+                                git commit -m "Update image to ${IMAGE_TAG}"
 
-                            git push https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/Shrishaks/todo-app-devops.git HEAD:main
+                                git push https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/Shrishaks/todo-app-devops.git HEAD:main
+                            fi
                         '''
                     }
                 }
@@ -103,16 +120,21 @@ pipeline {
     }
 
     post {
+
         success {
             echo "======================================"
             echo "CI/CD PIPELINE COMPLETED SUCCESSFULLY"
+            echo "======================================"
             echo "Docker Image: ${IMAGE_NAME}:${IMAGE_TAG}"
             echo "======================================"
         }
 
         failure {
+            echo "======================================"
             echo "CI/CD PIPELINE FAILED"
-            echo "Check the failed stage in the console output."
+            echo "======================================"
+            echo "Check the failed stage in Console Output."
+            echo "======================================"
         }
     }
 }
