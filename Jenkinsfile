@@ -1,67 +1,118 @@
 pipeline {
-    
-    agent any 
-    
+
+    agent any
+
     environment {
-        IMAGE_TAG = "${BUILD_NUMBER}"
+        IMAGE_NAME = "shrisha21/todo-app"
+        IMAGE_TAG  = "${BUILD_NUMBER}"
     }
-    
+
     stages {
-        
-        stage('Checkout'){
-           steps {
-                git credentialsId: 'github-creds', 
-                url: 'https://github.com/Shrishaks/todo-app-devops.git',
-                branch: 'main'
-           }
+
+        stage('Checkout Application') {
+            steps {
+                git credentialsId: 'github-creds',
+                    url: 'https://github.com/Shrishaks/todo-app-devops.git',
+                    branch: 'main'
+            }
         }
 
-        stage('Build Docker'){
-            steps{
-                script{
+        stage('Build Docker Image') {
+            steps {
+                sh '''
+                    echo "Building Docker image..."
+                    docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                '''
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-creds',
+                        usernameVariable: 'DOCKER_USERNAME',
+                        passwordVariable: 'DOCKER_PASSWORD'
+                    )
+                ]) {
                     sh '''
-                    echo 'Buid Docker Image'
-                    docker build -t shrisha21/todo-app:${BUILD_NUMBER} .
+                        echo "$DOCKER_PASSWORD" | docker login \
+                            -u "$DOCKER_USERNAME" \
+                            --password-stdin
+
+                        echo "Pushing Docker image..."
+                        docker push ${IMAGE_NAME}:${IMAGE_TAG}
+
+                        docker logout
                     '''
                 }
             }
         }
 
-        stage('Push the artifacts'){
-           steps{
-                script{
+        stage('Checkout Kubernetes Manifests') {
+            steps {
+                dir('k8s-manifests') {
+                    git credentialsId: 'github-creds',
+                        url: 'https://github.com/Shrishaks/todo-app-manifests.git',
+                        branch: 'main'
+                }
+            }
+        }
+
+        stage('Update Kubernetes Manifest') {
+            steps {
+                dir('k8s-manifests') {
                     sh '''
-                    echo 'Push to Repo'
-                    docker push shrisha21/todo-app:${BUILD_NUMBER}
+                        echo "Before update:"
+                        cat deploy.yaml
+
+                        sed -i "s|image:.*|image: ${IMAGE_NAME}:${IMAGE_TAG}|g" deploy.yaml
+
+                        echo "After update:"
+                        cat deploy.yaml
                     '''
                 }
             }
         }
-        
-        stage('Checkout K8S manifest SCM'){
+
+        stage('Commit and Push Manifest') {
             steps {
-                git credentialsId: 'github-creds', 
-                url: 'https://github.com/Shrishaks/todo-app-manifests.git',
-                branch: 'main'
-            }
-        }
-        
-        stage('Update K8S manifest & push to Repo'){
-            steps {
-                script{
-                    withCredentials([usernamePassword(credentialsId: 'github-creds', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
+                dir('k8s-manifests') {
+                    withCredentials([
+                        usernamePassword(
+                            credentialsId: 'github-creds',
+                            usernameVariable: 'GIT_USERNAME',
+                            passwordVariable: 'GIT_PASSWORD'
+                        )
+                    ]) {
                         sh '''
-                        cat deploy.yaml
-                        sed -i "s|image:.*|image: shrisha21/todo-app:${BUILD_NUMBER}|g" deploy.yaml
-                        cat deploy.yaml
-                        git add deploy.yaml
-                        git commit -m 'Updated the deploy yaml | Jenkins Pipeline'
-                        git remote -v
-                        git push https://github.com/Shrishaks/todo-app-manifests.git HEAD:main
-                        '''                        
+                            git config user.name "Jenkins"
+                            git config user.email "jenkins@localhost"
+
+                            git add deploy.yaml
+
+                            git diff --cached --quiet || \
+                            git commit -m "Update image to ${IMAGE_TAG}"
+
+                            git push https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/Shrishaks/todo-app-manifests.git HEAD:main
+                        '''
                     }
                 }
             }
+        }
+    }
+
+    post {
+        success {
+            echo "======================================"
+            echo "CI/CD PIPELINE COMPLETED SUCCESSFULLY"
+            echo "Docker Image: ${IMAGE_NAME}:${IMAGE_TAG}"
+            echo "======================================"
+        }
+
+        failure {
+            echo "CI/CD PIPELINE FAILED"
+            echo "Check the failed stage in the console output."
         }
     }
 }
